@@ -1,21 +1,85 @@
-import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import VideoThumbnailCard from '../components/VideoThumbnailCard';
 import EmbeddedPlayer from '../components/EmbeddedPlayer';
 import SubCategoryGrid from '../components/SubCategoryGrid';
 import workoutData from '../data/categorised_workout_v2.json';
+import { extractVideoId, findVideoById } from '../utils/videoUtils';
 
 function Category() {
-  const { id } = useParams();
+  const { id, subcategoryId, videoId } = useParams();
+  const navigate = useNavigate();
   const category = workoutData.categories.find((cat) => cat.id === id);
   const [selectedSubCategory, setSelectedSubCategory] = useState(null);
+  
+  // Sync selectedSubCategory with URL param
+  useEffect(() => {
+    if (subcategoryId && category && category.subCategories) {
+      const subCategory = category.subCategories.find(
+        (sub) => sub.id === subcategoryId
+      );
+      if (subCategory) {
+        setSelectedSubCategory(subCategory);
+      }
+    } else if (!subcategoryId) {
+      setSelectedSubCategory(null);
+    }
+  }, [subcategoryId, category]);
+  
   const [selectedVideo, setSelectedVideo] = useState(null);
+  
+  // Helper to build video URL path
+  const buildVideoPath = (video) => {
+    if (!video) return '';
+    const vidId = extractVideoId(video.url);
+    if (!vidId) return '';
+    
+    if (subcategoryId) {
+      return `/category/${id}/${subcategoryId}/${vidId}`;
+    } else {
+      return `/category/${id}/${vidId}`;
+    }
+  };
+  
   const [selectedVideos, setSelectedVideos] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [mode, setMode] = useState("single"); // "single" | "superset" | "circuit"
   const [activePlaylist, setActivePlaylist] = useState([]); // Store the playlist for superset/circuit mode
   const [isSelectionMode, setIsSelectionMode] = useState(false); // Toggle for selection mode
+
+  // Sync selectedVideo with URL param
+  useEffect(() => {
+    if (videoId) {
+      // Determine which videos to search in
+      let videosToSearch = [];
+      if (subcategoryId && selectedSubCategory) {
+        videosToSearch = selectedSubCategory.videos || [];
+      } else if (category) {
+        if (category.type === 'flat') {
+          videosToSearch = category.videos || [];
+        } else if (category.type === 'hierarchical' && selectedSubCategory) {
+          videosToSearch = selectedSubCategory.videos || [];
+        }
+      }
+      
+      const video = findVideoById(videosToSearch, videoId);
+      if (video) {
+        // Only update if it's a different video to avoid unnecessary re-renders
+        setSelectedVideo(prev => {
+          if (!prev || prev.url !== video.url) {
+            return video;
+          }
+          return prev;
+        });
+        // Reset mode to single when navigating via URL
+        setMode("single");
+      }
+    }
+    // Note: We don't clear selectedVideo when videoId is removed from URL
+    // because that would interfere with superset/circuit mode navigation
+    // The video will be cleared when user navigates away via breadcrumb or back button
+  }, [videoId, subcategoryId, category, selectedSubCategory]);
 
   // Helper to check if two videos are the same
   const isSameVideo = (v1, v2) => {
@@ -82,6 +146,7 @@ function Category() {
       setSelectedVideos([]);
       setActivePlaylist([]);
       setIsSelectionMode(false);
+      navigate(`/category/${id}`, { replace: false });
     } else if (level === 'subcategory') {
       setSelectedVideo(null);
       setMode("single");
@@ -89,6 +154,7 @@ function Category() {
       setSelectedVideos([]);
       setActivePlaylist([]);
       setIsSelectionMode(false);
+      navigate(`/category/${id}`, { replace: false });
     }
   };
 
@@ -172,7 +238,7 @@ function Category() {
             <h1 className="text-3xl font-bold mb-6">{category.label}</h1>
             <SubCategoryGrid
               subCategories={category.subCategories || []}
-              onSelectSubCategory={setSelectedSubCategory}
+              categoryId={id}
             />
           </div>
         </div>
@@ -242,14 +308,20 @@ function Category() {
       handleNext = () => {
         if (hasNext) {
           const nextVideo = videosToShow[currentIndexInList + 1];
-          setSelectedVideo(nextVideo);
+          const nextPath = buildVideoPath(nextVideo);
+          if (nextPath) {
+            navigate(nextPath, { replace: false });
+          }
         }
       };
 
       handlePrevious = () => {
         if (hasPrevious) {
           const prevVideo = videosToShow[currentIndexInList - 1];
-          setSelectedVideo(prevVideo);
+          const prevPath = buildVideoPath(prevVideo);
+          if (prevPath) {
+            navigate(prevPath, { replace: false });
+          }
         }
       };
       // Single mode: no autoplay (unchanged)
@@ -288,6 +360,12 @@ function Category() {
             setCurrentIndex(0);
             setActivePlaylist([]);
             setIsSelectionMode(false);
+            // Navigate back to video list
+            if (subcategoryId) {
+              navigate(`/category/${id}/${subcategoryId}`, { replace: false });
+            } else {
+              navigate(`/category/${id}`, { replace: false });
+            }
           }}
           onNext={shouldShowNextButton ? handleNext : undefined}
           onPrevious={shouldShowPreviousButton ? handlePrevious : undefined}
@@ -325,7 +403,8 @@ function Category() {
               <VideoThumbnailCard
                 key={index}
                 video={video}
-                onSelect={isSelectionMode ? undefined : setSelectedVideo}
+                categoryId={id}
+                subcategoryId={subcategoryId}
                 isSelected={isSelected}
                 onToggleSelect={isSelectionMode ? handleToggleVideo : undefined}
                 selectionMode={isSelectionMode}

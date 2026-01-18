@@ -11,6 +11,9 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/category/:id" element={<Category />} />
+          <Route path="/category/:id/:subcategoryId" element={<Category />} />
+          <Route path="/category/:id/:subcategoryId/:videoId" element={<Category />} />
+          <Route path="/category/:id/:videoId" element={<Category />} />
         </Routes>
       </div>
     </Router>
